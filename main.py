@@ -79,6 +79,7 @@ def main():
     while gui.running:
         gui.set_image(image)
         gui.show()
+    gui.show('out.png')
 
 
 if __name__ == '__main__':
