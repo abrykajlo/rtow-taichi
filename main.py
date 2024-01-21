@@ -1,11 +1,15 @@
-from color import color, write_color
-from ray import ray
-from vec3 import point3, vec3
-
 import taichi as ti
 import taichi.math as tm
 
-ti.init(arch=ti.gpu)
+ti.init(arch=ti.gpu, default_fp=ti.f64)
+
+from color import color, write_color
+from hittable import HitRecord
+from world import World
+from ray import ray
+from sphere import Sphere
+from vec3 import point3, vec3
+
 
 # Image
 
@@ -16,6 +20,14 @@ image_width = 400
 image_height = image_width / aspect_ratio
 image_height = 1 if image_height < 1 else image_height
 image_height = int(image_height)
+
+# World
+
+world = World()
+
+world.add(Sphere(point3([0, 0, -1]), 0.5))
+world.add(Sphere(point3([0, -100.5, -1]), 100))
+world.lock()
 
 # Camera
 
@@ -39,28 +51,21 @@ pixel00_loc = viewport_bottom_left + 0.5 * (pixel_delta_u + pixel_delta_v)
 image_shape = (image_width, image_height)
 image = ti.Vector.field(3, ti.f32, shape=image_shape)
 
-@ti.func
-def hit_sphere(center, radius, r: ray):
-    oc = r.origin - center
-    a = tm.dot(r.direction, r.direction)
-    b = 2 * tm.dot(oc, r.direction)
-    c = tm.dot(oc, oc) - radius * radius
-    discriminant = b * b - 4 * a * c
-    return discriminant >= 0
-
 WHITE = color([1, 1, 1])
 BLUE = color([0.5, 0.7, 1.0])
 
 @ti.func
-def ray_color(r: ray):
-    pixel_color = color([0, 0, 0])
-    if hit_sphere(point3([0, 0, -1]), 0.5, r):
-        pixel_color = color([1, 0, 0])
+def ray_color(r: ray, world: ti.template()):
+    result = color([0, 0, 0])
+
+    rec = world.hit(r, 0, tm.inf)
+    if rec.hit():
+        result = 0.5 * (rec.normal + color([1, 1, 1]))
     else:
         unit_direction = tm.normalize(r.direction)
         a = 0.5 * (unit_direction.y + 1)
-        pixel_color = (1 - a) * WHITE + a * BLUE
-    return pixel_color
+        result = (1 - a) * WHITE + a * BLUE
+    return result
 
 @ti.kernel
 def render():
@@ -69,8 +74,7 @@ def render():
         ray_direction = pixel_center - camera_center
         r = ray(camera_center, ray_direction)
         
-        
-        pixel_color = ray_color(r)
+        pixel_color = ray_color(r, world)
         write_color(image, i, j, pixel_color)
 
 def main():
